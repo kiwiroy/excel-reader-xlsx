@@ -91,46 +91,11 @@ sub next_cell {
 
     my $cell_node = $self->{_cells}->[ $self->{_next_cell_index} ];
 
-
-    my $range = $cell_node->getAttribute( 'r' );
-    return unless $range;
-
     # Create or re-use (for efficiency) a Cell object.
-    $cell = $self->{_cell};
-    $cell->_init();
-
-
-    ( $cell->{_row}, $cell->{_col} ) = _range_to_rowcol( $range );
-
-
-    my $type = $cell_node->getAttribute( 't' );
-
-    $cell->{_type} = $type || '';
-
-
-    # Read the cell <c> child nodes.
-    for my $child_node ( $cell_node->childNodes() ) {
-
-        my $node_name = $child_node->nodeName();
-
-
-        if ( $node_name eq 'v' ) {
-            $cell->{_value}     = $child_node->textContent();
-            $cell->{_has_value} = 1;
-        }
-
-        if ( $node_name eq 'is' ) {
-            $cell->{_value}     = $child_node->textContent();
-            $cell->{_has_value} = 1;
-        }
-        elsif ( $node_name eq 'f' ) {
-            $cell->{_formula}     = $child_node->textContent();
-            $cell->{_has_formula} = 1;
-        }
-    }
+    return unless $self->_node_populate_cell($cell_node, $self->{_cell});
 
     $self->{_next_cell_index}++;
-    return $cell;
+    return $self->{_cell};
 }
 
 
@@ -146,33 +111,60 @@ sub values {
     my $self = shift;
     my @values;
 
-
     # The row values are cached to allow multiple calls. Return cached values
     # if present.
     if ( defined $self->{_values} ) {
-        return @{ $self->{_values} };
+        @values = @{ $self->{_values} };
+    } else {
+
+	# Other wise read the values for the cells in the row.
+	
+	## As is convention in Excel::Reader::XLSX create a reusable Cell object.
+	my $cell = Excel::Reader::XLSX::Cell->new( $self->{_shared_strings} );
+	
+	# Store any cell values that exist.
+
+	foreach my $cell_node(@{ $self->{_cells} }) {
+	    if ($self->_node_populate_cell($cell_node, $cell)) {
+		$values[$cell->col] = $cell->value || "";
+	    }
+	}
+
+	# Convert any undef values to an empty strings by starting with a correctly sized array of such.
+	for my $value ( @values ) {
+	    $value = '' if !defined $value;
+	}
+	
+	# Store the values to allow multiple calls return the same data.
+	$self->{_values} = \@values;
     }
-
-    # Other wise read the values for the cells in the row.
-
-    # Store any cell values that exist.
-    while ( my $cell = $self->next_cell() ) {
-        my $col   = $cell->col();
-        my $value = $cell->value();
-        $values[$col] = $value;
-    }
-
-    # Convert any undef values to an empty string.
-    for my $value ( @values ) {
-        $value = '' if !defined $value;
-    }
-
-    # Store the values to allow multiple calls return the same data.
-    $self->{_values} = \@values;
 
     return @values;
 }
 
+###############################################################################
+#
+# values_by_range($first_index, $last_index)
+#
+# Return an array of values for a row. The range is from the cell of the first 
+# index specified or the first cell up to the cell of the second index specified
+# or the last cell. Returns '' for empty cells.
+#
+sub values_by_range {
+
+    my $self          = shift;
+    my ($begin, $end) = @_;
+
+    $begin ||= 0;
+    $end   ||= $self->{_max_cell_index} - 1;
+
+    # Get all the values to avoid "complex caching" index confusion.
+    my @values = $self->values();
+    
+    # and now this function looks trivial...
+
+    return @values[$begin .. $end];
+}
 
 ###############################################################################
 #
@@ -240,6 +232,43 @@ sub _range_to_rowcol {
     return $row, $col;
 }
 
+###############################################################################
+#
+# _node_populate_cell($node, $cell)
+#
+# Populate Cell object from a node
+#
+sub _node_populate_cell {
+    my ($self, $node, $cell) = @_;
+    my $result = 0;
+    my $range  = $node->getAttribute('r');
+    return $result unless $range;
+
+    $cell->_init();
+    ( $cell->{_row}, $cell->{_col} ) = _range_to_rowcol($range);
+
+    $cell->{_type} = $node->getAttribute('t') || '';
+    $result        = 1;
+
+    foreach my $child_node($node->childNodes) {
+	my $node_name = $child_node->nodeName();
+	
+	if ( $node_name eq 'v' ) {
+	    $cell->{_value}     = $child_node->textContent();
+	    $cell->{_has_value} = 1;
+	}
+	
+	if ( $node_name eq 'is' ) {
+	    $cell->{_value}     = $child_node->textContent();
+	    $cell->{_has_value} = 1;
+	} elsif ( $node_name eq 'f' ) {
+	    $cell->{_formula}     = $child_node->textContent();
+	    $cell->{_has_formula} = 1;
+	}
+    }
+
+    return $result;
+}
 
 1;
 

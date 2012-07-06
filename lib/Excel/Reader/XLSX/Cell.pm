@@ -86,6 +86,19 @@ sub value {
 
 ###############################################################################
 #
+# formula()
+#
+# Return the cell formula.
+#
+sub formula {
+    my $self = shift;
+
+    return $self->{_has_formula} ? $self->{_formula} : undef;
+}
+
+
+###############################################################################
+#
 # row()
 #
 # Return the cell row number, zero-indexed.
